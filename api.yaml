@@ -1,0 +1,80 @@
+swagger: "2.0"
+info:
+  title: Weather API
+  version: 1.0.0
+host: "localhost"
+basePath: /api/v1/weather
+schemes:
+  - http
+  - https
+consumes:
+  - application/json
+produces:
+  - application/json
+
+security:
+  - ApiKeyAuth: [ ]
+
+securityDefinitions:
+  ApiKeyAuth:
+    type: apiKey
+    in: header
+    name: Authorization
+
+paths:
+  /weather/:
+    get:
+      summary: Get current weather
+      description: Retrieve the current weather for a given location.
+      operationId: weatherGet
+      parameters:
+        - name: location
+          in: query
+          required: true
+          type: string
+          description: The location for which to retrieve the weather.
+      responses:
+        200:
+          $ref: "#/responses/WeatherResponse"
+        400:
+          $ref: "#/responses/BadRequest"
+        401:
+          $ref: "#/responses/Unauthorized"
+        500:
+          $ref: "#/responses/InternalServerError"
+
+responses:
+  WeatherResponse:
+    description: Successful response with current weather data.
+    schema:
+      $ref: "#/definitions/Weather"
+  InternalServerError:
+    description: Unknown error has occurred
+    schema:
+      $ref: "#/definitions/APIError"
+  Unauthorized:
+    description: Authorization information is missing, invalid or user does not have permission to take requested action
+    schema:
+      $ref: "#/definitions/APIError"
+  BadRequest:
+    description: Given request format is not same with expected format or validation failed
+    schema:
+      $ref: "#/definitions/APIError"
+
+definitions:
+  APIError:
+    type: object
+    properties:
+      error:
+        type: string
+        example: "Invalid location parameter"
+  Weather:
+    type: object
+    properties:
+      location:
+        type: string
+        example: "New York"
+      temperature:
+        type: number
+        format: float
+        example: 22.5
