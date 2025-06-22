@@ -8,8 +8,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"weather-app/clients"
-	"weather-app/settings"
+	"github.com/ensarkovankaya/weather-app/clients"
+	"github.com/ensarkovankaya/weather-app/settings"
 )
 
 func main() {

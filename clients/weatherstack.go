@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"weather-app/settings"
+	"github.com/ensarkovankaya/weather-app/settings"
 )
 
 type WeatherStackResponse struct {
