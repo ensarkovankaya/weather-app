@@ -1,4 +1,4 @@
-module weather-app
+module github.com/ensarkovankaya/weather-app
 
 go 1.24
 
