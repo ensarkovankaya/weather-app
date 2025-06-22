@@ -23,7 +23,15 @@ func main() {
 		}
 	}()
 
+	// Clients
+	client1 := clients.NewWeatherAPIClient()
+	client2 := clients.NewWeatherStackClient()
+
+	// Handlers
+	weatherHandler := NewWeatherHandler(db, client1, client2)
+
 	app := fiber.New()
+	weatherHandler.Setup(app)
 
 	go func() {
 		address := fmt.Sprintf(":%s", settings.Cnf.Port)
