@@ -15,7 +15,6 @@ location, returns average temperature and logs the results into a database.
 
 ## Requirements
 
-- Docker
 - Go 1.20 or later
 
 ## Installation
