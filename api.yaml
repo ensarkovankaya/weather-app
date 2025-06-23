@@ -3,7 +3,6 @@ info:
   title: Weather API
   version: 1.0.0
 host: "localhost"
-basePath: /api/v1/weather
 schemes:
   - http
   - https
