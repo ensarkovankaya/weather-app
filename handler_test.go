@@ -30,63 +30,180 @@ func (c *mockClient) Query(_ context.Context, location string) (float64, error) 
 }
 
 type testCase struct {
-	Name            string
-	Location        string
-	Client1         *mockClient
-	Client2         *mockClient
-	ExpectedTemp    float64
-	RequestCount    int
-	ResponseTimeout int
+	Name               string
+	Location           string
+	Client1            *mockClient
+	Client2            *mockClient
+	RequestCount       int
+	ResponseTimeout    int
+	ResponseStatusCode int
+	ResponseBody       string
+}
+
+func TestLocationRequiredResponse(t *testing.T) {
+	runTestCase(t, testCase{
+		RequestCount:       1,
+		ResponseTimeout:    int(2 * time.Second.Milliseconds()),
+		ResponseStatusCode: http.StatusBadRequest,
+		ResponseBody:       `{"error":"Location query parameter is required"}`,
+	})
 }
 
 func TestSuccessfulResponse(t *testing.T) {
 	cases := []testCase{
 		{
-			Name:            "Single Request",
-			Location:        "Istanbul",
-			Client1:         &mockClient{Name: "Client1", Temp: 20.0},
-			Client2:         &mockClient{Name: "Client2", Temp: 22.0},
-			ExpectedTemp:    21.0,
-			RequestCount:    1,
-			ResponseTimeout: int(6 * time.Second.Milliseconds()),
+			Name:               "Single Request",
+			Location:           "Istanbul",
+			Client1:            &mockClient{Name: "Client1", Temp: 20.0},
+			Client2:            &mockClient{Name: "Client2", Temp: 22.0},
+			RequestCount:       1,
+			ResponseTimeout:    int(6 * time.Second.Milliseconds()), // 5 seconds for aggregating requests ~1 second for processing
+			ResponseStatusCode: http.StatusOK,
+			ResponseBody:       `{"location":"Istanbul","temperature":21}`,
 		},
 		{
-			Name:            "Less than 10 requests",
-			Location:        "Istanbul",
-			Client1:         &mockClient{Name: "Client1", Temp: 16.0},
-			Client2:         &mockClient{Name: "Client2", Temp: 17.0},
-			ExpectedTemp:    16.5,
-			RequestCount:    rand.Intn(10) + 2, // Random number of requests between 2 and 10
-			ResponseTimeout: int(6 * time.Second.Milliseconds()),
+			Name:               "Less than 10 requests",
+			Location:           "Istanbul",
+			Client1:            &mockClient{Name: "Client1", Temp: 16.0},
+			Client2:            &mockClient{Name: "Client2", Temp: 17.0},
+			RequestCount:       rand.Intn(10) + 2,                   // Random number of requests between 2 and 10
+			ResponseTimeout:    int(6 * time.Second.Milliseconds()), // 5 seconds for aggregating requests ~1 second for processing
+			ResponseStatusCode: http.StatusOK,
+			ResponseBody:       `{"location":"Istanbul","temperature":16.5}`,
 		},
 		{
-			Name:            "Exactly 10 requests",
-			Location:        "Istanbul",
-			Client1:         &mockClient{Name: "Client1", Temp: 20.0},
-			Client2:         &mockClient{Name: "Client2", Temp: 22.0},
-			ExpectedTemp:    21.0,
-			RequestCount:    10,
-			ResponseTimeout: int(5 * time.Second.Milliseconds()), // should take less than 5 seconds
+			Name:               "10 requests",
+			Location:           "Istanbul",
+			Client1:            &mockClient{Name: "Client1", Temp: 20.0},
+			Client2:            &mockClient{Name: "Client2", Temp: 22.0},
+			RequestCount:       10,
+			ResponseTimeout:    int(5 * time.Second.Milliseconds()), // should take less than 5 seconds
+			ResponseStatusCode: http.StatusOK,
+			ResponseBody:       `{"location":"Istanbul","temperature":21}`,
 		},
 		{
-			Name:            "More than 10 requests",
-			Location:        "Istanbul",
-			Client1:         &mockClient{Name: "Client1", Temp: 20.0},
-			Client2:         &mockClient{Name: "Client2", Temp: 22.0},
-			ExpectedTemp:    21.0,
-			RequestCount:    rand.Intn(10) + 10,
-			ResponseTimeout: int(5 * time.Second.Milliseconds()), // should take less than 5 seconds
+			Name:               "More than 10 requests",
+			Location:           "Istanbul",
+			Client1:            &mockClient{Name: "Client1", Temp: 20.0},
+			Client2:            &mockClient{Name: "Client2", Temp: 22.0},
+			RequestCount:       rand.Intn(10) + 10,
+			ResponseTimeout:    int(7 * time.Second.Milliseconds()), // should take less than 7 seconds
+			ResponseStatusCode: http.StatusOK,
+			ResponseBody:       `{"location":"Istanbul","temperature":21}`,
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.Name, func(t *testing.T) {
-			testSuccessfulResponse(t, tc)
+			runTestCase(t, tc)
 		})
 	}
 }
 
-func testSuccessfulResponse(t *testing.T, tc testCase) {
+func TestSuccessfulResponseIfOneOfTheClientFail(t *testing.T) {
+	cases := []testCase{
+		{
+			Name:               "Single Request",
+			Location:           "Istanbul",
+			Client1:            &mockClient{Name: "Client1", Temp: 20.0},
+			Client2:            &mockClient{Name: "Client2", Err: fmt.Errorf("test error")},
+			RequestCount:       1,
+			ResponseTimeout:    int(6 * time.Second.Milliseconds()), // 5 seconds for aggregating requests ~1 second for processing
+			ResponseStatusCode: http.StatusOK,
+			ResponseBody:       `{"location":"Istanbul","temperature":20}`,
+		},
+		{
+			Name:               "Less than 10 requests",
+			Location:           "Istanbul",
+			Client1:            &mockClient{Name: "Client1", Err: fmt.Errorf("test error")},
+			Client2:            &mockClient{Name: "Client2", Temp: 16.0},
+			RequestCount:       rand.Intn(10) + 2,                   // Random number of requests between 2 and 10
+			ResponseTimeout:    int(6 * time.Second.Milliseconds()), // 5 seconds for aggregating requests ~1 second for processing
+			ResponseStatusCode: http.StatusOK,
+			ResponseBody:       `{"location":"Istanbul","temperature":16}`,
+		},
+		{
+			Name:               "10 requests",
+			Location:           "Istanbul",
+			Client1:            &mockClient{Name: "Client1", Temp: 20.0},
+			Client2:            &mockClient{Name: "Client2", Err: fmt.Errorf("test error")},
+			RequestCount:       10,
+			ResponseTimeout:    int(5 * time.Second.Milliseconds()), // should take less than 5 seconds
+			ResponseStatusCode: http.StatusOK,
+			ResponseBody:       `{"location":"Istanbul","temperature":20}`,
+		},
+		{
+			Name:               "More than 10 requests",
+			Location:           "Istanbul",
+			Client1:            &mockClient{Name: "Client1", Err: fmt.Errorf("test error")},
+			Client2:            &mockClient{Name: "Client2", Temp: 22.0},
+			RequestCount:       rand.Intn(10) + 10,
+			ResponseTimeout:    int(7 * time.Second.Milliseconds()), // should take less than 7 seconds
+			ResponseStatusCode: http.StatusOK,
+			ResponseBody:       `{"location":"Istanbul","temperature":22}`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.Name, func(t *testing.T) {
+			runTestCase(t, tc)
+		})
+	}
+}
+
+func TestFailedResponseIfAllTheClientsFail(t *testing.T) {
+	cases := []testCase{
+		{
+			Name:               "Single Request",
+			Location:           "Istanbul",
+			Client1:            &mockClient{Name: "Client1", Err: fmt.Errorf("test error")},
+			Client2:            &mockClient{Name: "Client2", Err: fmt.Errorf("test error")},
+			RequestCount:       1,
+			ResponseTimeout:    int(6 * time.Second.Milliseconds()), // 5 seconds for aggregating requests ~1 second for processing
+			ResponseStatusCode: http.StatusInternalServerError,
+			ResponseBody:       `{"error":"Failed to fetch weather data"}`,
+		},
+		{
+			Name:               "Less than 10 requests",
+			Location:           "Istanbul",
+			Client1:            &mockClient{Name: "Client1", Err: fmt.Errorf("test error")},
+			Client2:            &mockClient{Name: "Client2", Err: fmt.Errorf("test error")},
+			RequestCount:       rand.Intn(10) + 2,                   // Random number of requests between 2 and 10
+			ResponseTimeout:    int(6 * time.Second.Milliseconds()), // 5 seconds for aggregating requests ~1 second for processing
+			ResponseStatusCode: http.StatusInternalServerError,
+			ResponseBody:       `{"error":"Failed to fetch weather data"}`,
+		},
+		{
+			Name:               "10 requests",
+			Location:           "Istanbul",
+			Client1:            &mockClient{Name: "Client1", Err: fmt.Errorf("test error")},
+			Client2:            &mockClient{Name: "Client2", Err: fmt.Errorf("test error")},
+			RequestCount:       10,
+			ResponseTimeout:    int(5 * time.Second.Milliseconds()), // should take less than 5 seconds
+			ResponseStatusCode: http.StatusInternalServerError,
+			ResponseBody:       `{"error":"Failed to fetch weather data"}`,
+		},
+		{
+			Name:               "More than 10 requests",
+			Location:           "Istanbul",
+			Client1:            &mockClient{Name: "Client1", Err: fmt.Errorf("test error")},
+			Client2:            &mockClient{Name: "Client2", Err: fmt.Errorf("test error")},
+			RequestCount:       rand.Intn(10) + 10,
+			ResponseTimeout:    int(7 * time.Second.Milliseconds()), // should take less than 7 seconds
+			ResponseStatusCode: http.StatusInternalServerError,
+			ResponseBody:       `{"error":"Failed to fetch weather data"}`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.Name, func(t *testing.T) {
+			runTestCase(t, tc)
+		})
+	}
+}
+
+func runTestCase(t *testing.T, tc testCase) {
+	log.Printf("Running test case: %+v\n", tc)
 	// Mock the database
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
 	if err != nil {
@@ -97,7 +214,7 @@ func testSuccessfulResponse(t *testing.T, tc testCase) {
 	// Mock the expected database insert operation for every 10 requests
 	remainingRequests := tc.RequestCount
 	requestCount := tc.RequestCount
-	for remainingRequests > 0 {
+	for remainingRequests > 0 && tc.ResponseStatusCode == http.StatusOK {
 		if remainingRequests > 10 {
 			requestCount = 10
 			remainingRequests -= 10
@@ -140,28 +257,28 @@ func testSuccessfulResponse(t *testing.T, tc testCase) {
 
 	// Validate responses
 	for _, resp := range responses {
-		validateSuccessfulResponse(t, resp, tc.Location, tc.ExpectedTemp)
+		validateResponse(t, resp, tc)
 	}
 
+	// Allow some time for logging operations to complete, especially when handling more than 10 requests.
+	time.Sleep(500 * time.Millisecond)
 	// Check if db mock expectations were met
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("There were unfulfilled expectations: %s", err)
 	}
 }
 
-func validateSuccessfulResponse(t *testing.T, resp *http.Response, location string, expectedTemp float64) {
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("Expected status code %d, got %d", http.StatusOK, resp.StatusCode)
+func validateResponse(t *testing.T, resp *http.Response, tc testCase) {
+	if resp.StatusCode != tc.ResponseStatusCode {
+		t.Fatalf("Expected status code %d, got %d", tc.ResponseStatusCode, resp.StatusCode)
 	}
-
-	expectedResponse := fmt.Sprintf(`{"location":"%v","temperature":%v}`, location, expectedTemp)
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatalf("Failed to read response body: %v", err)
 	}
 
-	if string(body) != expectedResponse {
-		t.Fatalf("Expected response body '%s', got '%s'", expectedResponse, string(body))
+	if string(body) != tc.ResponseBody {
+		t.Fatalf("Expected response body '%s', got '%s'", tc.ResponseBody, string(body))
 	}
 }

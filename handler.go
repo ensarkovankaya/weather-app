@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+var failedTemperature = -999.0 // Used to indicate a failed temperature fetch
+
 type Client interface {
 	Query(ctx context.Context, location string) (float64, error)
 }
@@ -55,12 +57,15 @@ func (h *WeatherHandler) Query(c *fiber.Ctx) error {
 
 	// Wait for response and send it to the client
 	response := <-resultChan
+	if response.Temperature == failedTemperature {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch weather data"})
+	}
 	return c.Status(fiber.StatusOK).JSON(response)
 }
 
 func (h *WeatherHandler) queryLocation(ctx context.Context, location string, weatherChannel chan chan WeatherResponse) {
 	defer h.cleanupChannel(location)
-	resultChannels := make([]chan WeatherResponse, 0, 10) // Limit to 10 requests
+	resultChannels := make([]chan WeatherResponse, 0)
 	timer := time.NewTimer(5 * time.Second)
 	defer timer.Stop()
 	var stop bool
@@ -73,12 +78,12 @@ func (h *WeatherHandler) queryLocation(ctx context.Context, location string, wea
 			log.Println("Received request for location:", location, len(resultChannels))
 			if len(resultChannels) >= 10 {
 				stop = true // Stop collecting after 10 requests
-				h.cleanupChannel(location)
 			}
 		case <-timer.C:
 			stop = true // Stop collecting after 5 seconds
 		}
 	}
+	h.cleanupChannel(location)
 
 	// Query the weather API concurrently
 	var (
@@ -101,11 +106,21 @@ func (h *WeatherHandler) queryLocation(ctx context.Context, location string, wea
 	}()
 	wg.Wait()
 
-	// Log the request to the database
-	go h.logToDatabase(location, temp1, temp2, len(resultChannels))
-
 	// Calculate average temperature and prepare response
-	avgTemp := (temp1 + temp2) / 2
+	var avgTemp float64
+	if err1 != nil && err2 != nil {
+		log.Println("Both API calls failed, returning failed temperature")
+		avgTemp = failedTemperature
+	} else if err1 == nil && err2 != nil {
+		log.Println("Only first API call succeeded, using its temperature")
+		avgTemp = temp1
+	} else if err1 != nil && err2 == nil {
+		log.Println("Only second API call succeeded, using its temperature")
+		avgTemp = temp2
+	} else {
+		log.Println("Both API calls succeeded, calculating average temperature")
+		avgTemp = (temp1 + temp2) / 2
+	}
 	response := WeatherResponse{
 		Location:    location,
 		Temperature: avgTemp,
@@ -116,6 +131,9 @@ func (h *WeatherHandler) queryLocation(ctx context.Context, location string, wea
 		rc <- response
 		close(rc)
 	}
+
+	// Log the request to the database
+	h.logToDatabase(location, temp1, temp2, len(resultChannels))
 }
 
 func (h *WeatherHandler) logToDatabase(location string, temp1, temp2 float64, requestCount int) {
@@ -142,7 +160,7 @@ func (h *WeatherHandler) getChannel(ctx context.Context, location string) chan W
 	defer h.lock.Unlock()
 	weatherChannel, exists := h.queries[location]
 	if !exists {
-		weatherChannel = make(chan chan WeatherResponse)
+		weatherChannel = make(chan chan WeatherResponse, 10) // Limit to 10 concurrent requests
 		h.queries[location] = weatherChannel
 		go h.queryLocation(ctx, location, weatherChannel)
 	}
