@@ -64,7 +64,6 @@ func (h *WeatherHandler) Query(c *fiber.Ctx) error {
 }
 
 func (h *WeatherHandler) queryLocation(ctx context.Context, location string, weatherChannel chan chan WeatherResponse) {
-	defer h.cleanupChannel(location)
 	resultChannels := make([]chan WeatherResponse, 0)
 	timer := time.NewTimer(5 * time.Second)
 	defer timer.Stop()
@@ -148,9 +147,7 @@ func (h *WeatherHandler) logToDatabase(location string, temp1, temp2 float64, re
 func (h *WeatherHandler) cleanupChannel(location string) {
 	h.lock.Lock()
 	defer h.lock.Unlock()
-	if _, exists := h.queries[location]; exists {
-		delete(h.queries, location)
-	}
+	delete(h.queries, location)
 }
 
 func (h *WeatherHandler) getChannel(ctx context.Context, location string) chan WeatherResponse {
